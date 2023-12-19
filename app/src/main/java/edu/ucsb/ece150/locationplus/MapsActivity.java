@@ -21,6 +21,10 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 
 public class MapsActivity extends AppCompatActivity implements LocationListener, OnMapReadyCallback {
 
@@ -31,6 +35,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private GnssStatus.Callback mGnssStatusCallback;
     private GoogleMap mMap;
     private LocationManager mLocationManager;
+
+    private Marker mCurrentLocationMarker;
 
     private Toolbar mToolbar;
 
@@ -71,6 +77,7 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
 
         // [TODO] Implement behavior when Google Maps is ready
 
+
         // [TODO] In addition, add a listener for long clicks (which is the starting point for
         // creating a Geofence for the destination and listening for transitions that indicate
         // arrival)
@@ -78,7 +85,16 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
 
     @Override
     public void onLocationChanged(Location location) {
-        // [TODO] Implement behavior when a location update is received
+        LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
+        if (mCurrentLocationMarker == null){
+            mCurrentLocationMarker = mMap.addMarker(new MarkerOptions()
+                    .position(newLocation)
+                    .title("Current Location")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)));
+        } else {
+            mCurrentLocationMarker.setPosition(newLocation);
+        }
+
     }
 
     /*
