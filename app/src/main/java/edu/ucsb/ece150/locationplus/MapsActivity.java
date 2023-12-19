@@ -9,6 +9,9 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
@@ -18,6 +21,7 @@ import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
@@ -39,6 +43,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private Marker mCurrentLocationMarker;
 
     private Toolbar mToolbar;
+
+    private boolean centeredOnMyLocation = true;
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
@@ -94,7 +100,9 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         } else {
             mCurrentLocationMarker.setPosition(newLocation);
         }
-
+        if (centeredOnMyLocation) {
+            mMap.animateCamera(CameraUpdateFactory.newLatLng(newLocation));
+        }
     }
 
     /*
@@ -165,5 +173,21 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
 
         mLocationManager.removeUpdates(this);
         mLocationManager.unregisterGnssStatusCallback(mGnssStatusCallback);
+    }
+
+    public boolean onCreateOptionsMenu(Menu menu){
+        mToolbar.inflateMenu(R.menu.actions);
+        mToolbar.setOnMenuItemClickListener(new Toolbar.OnMenuItemClickListener() {
+            @Override
+            public boolean onMenuItemClick(MenuItem item) {
+                int menuItemID = item.getItemId();
+                if (menuItemID == R.id.toggleCenter) {
+                    centeredOnMyLocation = !centeredOnMyLocation;
+                    Toast.makeText(MapsActivity.this, "Auto Center " + (centeredOnMyLocation ? "Enabled" : "Disabled"), Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+        });
+        return true;
     }
 }
