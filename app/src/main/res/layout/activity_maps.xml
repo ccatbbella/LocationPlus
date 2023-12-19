@@ -25,5 +25,26 @@
         android:layout_height="match_parent"
         tools:context=".MapsActivity" />
 
+    <FrameLayout
+        android:id="@+id/frameLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize"
+        android:background="#FFFFFF"
+        android:elevation="100dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/satelliteInformationHeader"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:paddingLeft="15dp"
+            android:gravity="center_vertical"
+            android:text="Number of Satellites: 0\nNumber Used In Fix: 0"
+            android:textColor="#77797A"
+            android:textSize="18sp" />
+
+    </FrameLayout>
+
 </RelativeLayout>
 

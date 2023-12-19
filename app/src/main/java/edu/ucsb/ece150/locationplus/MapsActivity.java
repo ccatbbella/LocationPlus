@@ -11,6 +11,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
@@ -45,6 +49,11 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private Toolbar mToolbar;
 
     private boolean centeredOnMyLocation = true;
+    private boolean viewingSatelliteList = false;
+
+    private FrameLayout mFrameLayout;
+    private ArrayAdapter mAdapter;
+    private TextView mSatelliteInfoHeader;
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
@@ -70,7 +79,11 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             }
         };
 
-        // [TODO] Additional setup for viewing satellite information (lists, adapters, etc.)
+        //setup for viewing satellite information (lists, adapters, etc.)
+        mFrameLayout = findViewById(R.id.frameLayout);
+
+        mSatelliteInfoHeader = findViewById(R.id.satelliteInformationHeader);
+
 
         // Set up Toolbar
         mToolbar = (Toolbar) findViewById(R.id.appToolbar);
@@ -101,7 +114,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             mCurrentLocationMarker.setPosition(newLocation);
         }
         if (centeredOnMyLocation) {
-            mMap.animateCamera(CameraUpdateFactory.newLatLng(newLocation));
+            float zoomLevel = 15.0f;
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(newLocation, zoomLevel));
         }
     }
 
@@ -184,6 +198,9 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
                 if (menuItemID == R.id.toggleCenter) {
                     centeredOnMyLocation = !centeredOnMyLocation;
                     Toast.makeText(MapsActivity.this, "Auto Center " + (centeredOnMyLocation ? "Enabled" : "Disabled"), Toast.LENGTH_SHORT).show();
+                } else if (menuItemID == R.id.viewSatellite) {
+                    viewingSatelliteList = !viewingSatelliteList;
+                    mFrameLayout.setVisibility(viewingSatelliteList ? View.VISIBLE : View.GONE);
                 }
                 return true;
             }
