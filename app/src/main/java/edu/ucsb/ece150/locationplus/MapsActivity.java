@@ -1,15 +1,19 @@
 package edu.ucsb.ece150.locationplus;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.GnssStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -20,10 +24,12 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
 
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingClient;
@@ -33,18 +39,34 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.Circle;
+import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 public class MapsActivity extends AppCompatActivity implements LocationListener, OnMapReadyCallback {
-
+    private final int GEOFENCE_RADIUS_M = 100;
+    private final int MY_PERMISSIONS_REQUEST_FINE_LOCATION = 3;
+    // How long user stay in before dwell is triggered
+    private final int GEOFENCE_LOITER_DELAY_MS = 10000;
+    private final long GEOFENCE_EXPIRATION_MS = Geofence.NEVER_EXPIRE;
+    private final String GEOFENCE_REQUEST_ID = "Target Destination";
+    private final List<String> GEOFENCE_REQUEST_LIST = Collections.unmodifiableList(Arrays.asList(GEOFENCE_REQUEST_ID));
     private Geofence mGeofence;
     private GeofencingClient mGeofencingClient;
     private PendingIntent mPendingIntent = null;
+
+    private FloatingActionButton mRemoveDestinationButton;
 
     private GnssStatus.Callback mGnssStatusCallback;
     private GoogleMap mMap;
@@ -56,6 +78,10 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
 
     private boolean centeredOnMyLocation = true;
     private boolean viewingSatelliteList = false;
+    private boolean movingToDestination = false;
+    //Graphics on the map that represents destination region
+    private Circle mCircle;
+    private Marker mDestinationMarker;
 
     private FrameLayout mFrameLayout;
     private ArrayAdapter mAdapter;
@@ -73,6 +99,30 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+        mRemoveDestinationButton = findViewById(R.id.RemoveDestinationButton);
+        mRemoveDestinationButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (movingToDestination) {
+                    AlertDialog cancelConfirmation = new AlertDialog.Builder(MapsActivity.this)
+                            .setTitle("Remove Destination")
+                            .setMessage("Would you like to remove the current destination?")
+                            .setPositiveButton("YES", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    removeDestinationGeofence();
+                                }
+                            })
+                            .setNegativeButton("NO", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    dialogInterface.dismiss();
+                                }
+                            }).create();
+                    cancelConfirmation.show();
+                }
+            }
+        });
 
         // Set up Geofencing Client
         mGeofencingClient = LocationServices.getGeofencingClient(MapsActivity.this);
@@ -86,7 +136,7 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
                 // Update mSatellites when the satellite status is updated
                 if (status.getSatelliteCount() == 0) return;
                 mSatellites.clear();
-                for (int index = 0; index < status.getSatelliteCount(); index++){
+                for (int index = 0; index < status.getSatelliteCount(); index++) {
                     mSatellites.add(new Satellite(
                             index,
                             status.getAzimuthDegrees(index),
@@ -144,15 +194,42 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         // [TODO] Implement behavior when Google Maps is ready
 
 
-        // [TODO] In addition, add a listener for long clicks (which is the starting point for
-        // creating a Geofence for the destination and listening for transitions that indicate
-        // arrival)
+        // Create a Geofence for the destination and listening for transitions that indicate
+        // arrival or Dwell in there already
+        mMap.setOnMapLongClickListener(new GoogleMap.OnMapLongClickListener() {
+            @Override
+            public void onMapLongClick(@NonNull LatLng latLng) {
+                if (movingToDestination) {
+                    Toast.makeText(MapsActivity.this, "There is already an existing destination. Remove the existing destination and try again.", Toast.LENGTH_SHORT).show();
+                } else {
+                    AlertDialog confirmDestination = new AlertDialog.Builder(MapsActivity.this)
+                            .setTitle("Confirm Destination")
+                            .setMessage(String.format("Set position (%.3f°, %.3f°) as your destination?", latLng.latitude, latLng.longitude))
+                            .setPositiveButton("YES", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    movingToDestination = true;
+                                    addDestinationGeofence(latLng);
+                                }
+                            })
+                            .setNegativeButton("NO", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    dialogInterface.dismiss();
+                                }
+                            })
+                            .create();
+                    confirmDestination.show();
+                }
+
+            }
+        });
     }
 
     @Override
     public void onLocationChanged(Location location) {
         LatLng newLocation = new LatLng(location.getLatitude(), location.getLongitude());
-        if (mCurrentLocationMarker == null){
+        if (mCurrentLocationMarker == null) {
             mCurrentLocationMarker = mMap.addMarker(new MarkerOptions()
                     .position(newLocation)
                     .title("Current Location")
@@ -174,30 +251,30 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
      * You may use them if you need to.
      */
     @Override
-    public void onProviderDisabled(String provider) {}
+    public void onProviderDisabled(String provider) {
+    }
 
     @Override
-    public void onProviderEnabled(String provider) {}
+    public void onProviderEnabled(String provider) {
+    }
 
     @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {}
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+    }
 
     private GeofencingRequest getGeofenceRequest() {
-        // [TODO] Set the initial trigger (i.e. what should be triggered if the user is already
-        // inside the Geofence when it is created)
-
         return new GeofencingRequest.Builder()
-                //.setInitialTrigger()  <--  Add triggers here
+                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER | GeofencingRequest.INITIAL_TRIGGER_DWELL)
                 .addGeofence(mGeofence)
                 .build();
     }
 
     private PendingIntent getGeofencePendingIntent() {
-        if(mPendingIntent != null)
+        if (mPendingIntent != null)
             return mPendingIntent;
 
         Intent intent = new Intent(MapsActivity.this, GeofenceBroadcastReceiver.class);
-        mPendingIntent = PendingIntent.getBroadcast(MapsActivity.this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        mPendingIntent = PendingIntent.getBroadcast(MapsActivity.this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
         return mPendingIntent;
     }
 
@@ -236,7 +313,7 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         mLocationManager.unregisterGnssStatusCallback(mGnssStatusCallback);
     }
 
-    public boolean onCreateOptionsMenu(Menu menu){
+    public boolean onCreateOptionsMenu(Menu menu) {
         mToolbar.inflateMenu(R.menu.actions);
         mToolbar.setOnMenuItemClickListener(new Toolbar.OnMenuItemClickListener() {
             @Override
@@ -253,5 +330,80 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             }
         });
         return true;
+    }
+
+
+    private void addDestinationGeofence(LatLng latLng) {
+        Log.d("Geofence", "Indside addDestinationGeofence");
+        if (mMap != null) {
+            mDestinationMarker = mMap.addMarker(new MarkerOptions()
+                    .position(latLng)
+                    .title("Destination")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                    .alpha(0.8f));
+            mCircle = mMap.addCircle(new CircleOptions()
+                    .center(latLng)
+                    .radius(GEOFENCE_RADIUS_M)
+                    .fillColor(0x44FF0000)
+                    .strokeColor(Color.TRANSPARENT)
+                    .strokeWidth(2));
+        }
+        mGeofence = new Geofence.Builder()
+                .setRequestId(GEOFENCE_REQUEST_ID)
+                .setCircularRegion(latLng.latitude, latLng.longitude, GEOFENCE_RADIUS_M)
+                .setExpirationDuration(GEOFENCE_EXPIRATION_MS)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_DWELL)
+                .setLoiteringDelay(GEOFENCE_LOITER_DELAY_MS)
+                .build();
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},
+                    MY_PERMISSIONS_REQUEST_FINE_LOCATION);
+            // then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission
+            return;
+        }
+        mGeofencingClient.addGeofences(getGeofenceRequest(), getGeofencePendingIntent())
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void aVoid) {
+                        Log.d("Geofence", "Geofence added successfully");
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Log.e("Geofence", "Geofence did not get added", e);
+                    }
+                });
+        mRemoveDestinationButton.show();
+
+    }
+
+    private void removeDestinationGeofence() {
+        Log.d("Geofence", "Inside removeDestinationGeofence");
+        movingToDestination = false;
+        mRemoveDestinationButton.hide();
+        if(mDestinationMarker != null)
+            mDestinationMarker.remove();
+        if(mCircle != null)
+            mCircle.remove();
+        mGeofencingClient.removeGeofences(GEOFENCE_REQUEST_LIST)
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void aVoid) {
+                        Log.d("Geofence", "Geofence removed successfully");
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Log.d("Geofence", "Geofence did not get removed successfully");
+                    }
+                });
+        mPendingIntent = null;
+
     }
 }
