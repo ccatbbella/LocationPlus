@@ -2,6 +2,7 @@ package edu.ucsb.ece150.locationplus;
 
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.location.GnssStatus;
 import android.location.Location;
@@ -12,12 +13,15 @@ import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 
@@ -33,6 +37,8 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+
+import java.util.ArrayList;
 
 public class MapsActivity extends AppCompatActivity implements LocationListener, OnMapReadyCallback {
 
@@ -54,6 +60,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private FrameLayout mFrameLayout;
     private ArrayAdapter mAdapter;
     private TextView mSatelliteInfoHeader;
+    private ArrayList<Satellite> mSatellites = new ArrayList<>();
+    private ListView mListView;
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
@@ -75,14 +83,53 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         mGnssStatusCallback = new GnssStatus.Callback() {
             @Override
             public void onSatelliteStatusChanged(GnssStatus status) {
-                // [TODO] Implement behavior when the satellite status is updated
+                // Update mSatellites when the satellite status is updated
+                if (status.getSatelliteCount() == 0) return;
+                mSatellites.clear();
+                for (int index = 0; index < status.getSatelliteCount(); index++){
+                    mSatellites.add(new Satellite(
+                            index,
+                            status.getAzimuthDegrees(index),
+                            status.getCarrierFrequencyHz(index),
+                            status.getCn0DbHz(index),
+                            status.getConstellationType(index),
+                            status.getElevationDegrees(index),
+                            status.getSvid(index)
+                    ));
+                }
+                mAdapter.notifyDataSetChanged();
+                mSatelliteInfoHeader.setText((new StringBuilder(""))
+                        .append("Number of Satellites: ").append(status.getSatelliteCount())
+                        .toString()
+                );
             }
         };
 
         //setup for viewing satellite information (lists, adapters, etc.)
         mFrameLayout = findViewById(R.id.frameLayout);
-
         mSatelliteInfoHeader = findViewById(R.id.satelliteInformationHeader);
+        mAdapter = new ArrayAdapter<>(MapsActivity.this, android.R.layout.simple_expandable_list_item_1, mSatellites);
+        mListView = findViewById(R.id.satelliteList);
+        mListView.setAdapter(mAdapter);
+        mAdapter.notifyDataSetChanged();
+        mListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int position, long id) {
+                final Satellite clickedSatellite = mSatellites.get((int) id);
+
+                AlertDialog satelliteInformation = new AlertDialog.Builder(MapsActivity.this)
+                        .setTitle(clickedSatellite.toString())
+                        .setMessage(clickedSatellite.getSatelliteInformation())
+                        .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                dialogInterface.dismiss();
+                            }
+                        })
+                        .create();
+                satelliteInformation.show();
+            }
+        });
 
 
         // Set up Toolbar
