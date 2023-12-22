@@ -1,6 +1,7 @@
 package edu.ucsb.ece150.locationplus;
 
 import android.annotation.SuppressLint;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -274,7 +275,7 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             return mPendingIntent;
 
         Intent intent = new Intent(MapsActivity.this, GeofenceBroadcastReceiver.class);
-        mPendingIntent = PendingIntent.getBroadcast(MapsActivity.this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        mPendingIntent = PendingIntent.getBroadcast(MapsActivity.this, 0, intent, PendingIntent.FLAG_MUTABLE);
         return mPendingIntent;
     }
 
@@ -295,6 +296,13 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
         super.onResume();
 
         // [TODO] Data recovery
+        if(getIntent().getBooleanExtra("GeofenceTriggered", false)) {
+            Log.d("Geofence", "Arrived at destination");
+            getIntent().removeExtra("GeofenceTriggered");
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.cancelAll();
+            removeDestinationGeofence();
+        }
     }
 
     @Override
