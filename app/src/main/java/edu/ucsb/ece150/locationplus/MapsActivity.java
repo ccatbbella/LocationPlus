@@ -1,11 +1,13 @@
 package edu.ucsb.ece150.locationplus;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.GnssStatus;
@@ -56,6 +58,14 @@ import java.util.Collections;
 import java.util.List;
 
 public class MapsActivity extends AppCompatActivity implements LocationListener, OnMapReadyCallback {
+    private final String APP_STATE = "AppState";
+    private final String CENTERED = "CenteredOnMyPosition";
+    private final String DESTINATION_LAT = "DestinationLatitude";
+    private final String DESTINATION_LNG = "DestinationLongitude";
+    private final String MOVING_TO_DESTINATION = "MovingToDestination";
+    private final String VIEW_SATELLITES = "ViewingSatellitesList";
+    private final int RC_HANDLE_ACCESS_FINE_LOCATION_PERMISSION = 1;
+    private final int RC_HANDLE_POST_NOTIFICATION_PERMISSION = 2;
     private final int GEOFENCE_RADIUS_M = 100;
     private final int MY_PERMISSIONS_REQUEST_FINE_LOCATION = 3;
     // How long user stay in before dwell is triggered
@@ -89,6 +99,11 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private TextView mSatelliteInfoHeader;
     private ArrayList<Satellite> mSatellites = new ArrayList<>();
     private ListView mListView;
+    private SharedPreferences mSharedPreferences;
+    private SharedPreferences.Editor mSharedPreferencesEditor;
+    private final float NULL_COORDINATE_PLACEHOLDER = -10000;
+    private float destinationLat = NULL_COORDINATE_PLACEHOLDER;
+    private float destinationLng = NULL_COORDINATE_PLACEHOLDER;
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
@@ -182,10 +197,13 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             }
         });
 
-
         // Set up Toolbar
         mToolbar = (Toolbar) findViewById(R.id.appToolbar);
         setSupportActionBar(mToolbar);
+
+        // Set up SharedPreferences
+        mSharedPreferences = getSharedPreferences(APP_STATE, MODE_PRIVATE);
+        mSharedPreferencesEditor = mSharedPreferences.edit();
     }
 
     @Override
@@ -210,6 +228,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
                                 @Override
                                 public void onClick(DialogInterface dialogInterface, int i) {
                                     movingToDestination = true;
+                                    destinationLat = (float) latLng.latitude;
+                                    destinationLng = (float) latLng.longitude;
                                     addDestinationGeofence(latLng);
                                 }
                             })
@@ -283,9 +303,17 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     @Override
     protected void onStart() throws SecurityException {
         super.onStart();
+        int accessFineLocationPermissionGranted = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION);
+        if (accessFineLocationPermissionGranted != PackageManager.PERMISSION_GRANTED) {
+            final String[] permission = new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+            ActivityCompat.requestPermissions(this, permission, RC_HANDLE_ACCESS_FINE_LOCATION_PERMISSION);
+        }
 
-        // [TODO] Ensure that necessary permissions are granted (look in AndroidManifest.xml to
-        // see what permissions are needed for this app)
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            final String[] permission = new String[]{android.Manifest.permission.POST_NOTIFICATIONS};
+            ActivityCompat.requestPermissions(this, permission, RC_HANDLE_POST_NOTIFICATION_PERMISSION);
+            return;
+        }
 
         mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this);
         mLocationManager.registerGnssStatusCallback(mGnssStatusCallback);
@@ -295,6 +323,11 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     protected void onResume() {
         super.onResume();
 
+        centeredOnMyLocation = mSharedPreferences.getBoolean(CENTERED, true);
+        movingToDestination = mSharedPreferences.getBoolean(MOVING_TO_DESTINATION, false);
+        destinationLat = mSharedPreferences.getFloat(DESTINATION_LAT, NULL_COORDINATE_PLACEHOLDER);
+        destinationLng = mSharedPreferences.getFloat(DESTINATION_LNG, NULL_COORDINATE_PLACEHOLDER);
+
         // [TODO] Data recovery
         if(getIntent().getBooleanExtra("GeofenceTriggered", false)) {
             Log.d("Geofence", "Arrived at destination");
@@ -303,13 +336,37 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
             notificationManager.cancelAll();
             removeDestinationGeofence();
         }
+
+        if(movingToDestination) {
+            Log.d("Geofence", "onResume");
+            addDestinationGeofence(new LatLng(destinationLat, destinationLng));
+        } else {
+            mRemoveDestinationButton.hide();
+        }
+
+        viewingSatelliteList = mSharedPreferences.getBoolean(VIEW_SATELLITES, false);
+        mFrameLayout.setVisibility(viewingSatelliteList ? View.VISIBLE : View.GONE);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
 
-        // [TODO] Data saving
+        // Data saving
+        mSharedPreferencesEditor.clear();
+        mSharedPreferencesEditor.putBoolean(CENTERED, centeredOnMyLocation);
+
+        mSharedPreferencesEditor.putBoolean(MOVING_TO_DESTINATION, movingToDestination);
+        mSharedPreferencesEditor.putFloat(DESTINATION_LAT, destinationLat);
+        mSharedPreferencesEditor.putFloat(DESTINATION_LNG, destinationLng);
+
+        mSharedPreferencesEditor.putBoolean(VIEW_SATELLITES, viewingSatelliteList);
+        mSharedPreferencesEditor.commit();
+
+        if(mPendingIntent != null) {
+            Log.d("Geofence", "onPause");
+            removeDestinationGeofence();
+        }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
@@ -393,6 +450,8 @@ public class MapsActivity extends AppCompatActivity implements LocationListener,
     private void removeDestinationGeofence() {
         Log.d("Geofence", "Inside removeDestinationGeofence");
         movingToDestination = false;
+        destinationLat = NULL_COORDINATE_PLACEHOLDER;
+        destinationLng = NULL_COORDINATE_PLACEHOLDER;
         mRemoveDestinationButton.hide();
         if(mDestinationMarker != null)
             mDestinationMarker.remove();
