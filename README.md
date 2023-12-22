@@ -1,0 +1,6 @@
+- Requires ACCESS_FINE_LOCATION and POST_NOTIFICATIONS permission
+- Requires Google Maps API keys
+  - Create a new project on Google Cloud Platform
+  - Go to APIs & Services → Credentials and create a new API key
+  - Add your API key to the google_maps_api.xml file in the "res/values" folder
+- To run the app, open the unzipped folder in Android Studio and click run
